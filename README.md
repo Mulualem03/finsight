@@ -33,7 +33,7 @@ FinSight is a working reference implementation of that surface, built from scrat
 
 | Dashboard | Transactions | Insights |
 |-----------|--------------|----------|
-| _placeholder_ | _placeholder_ | _placeholder_ |
+| ![Dashboard](./docs/screenshots/dashboard.png) | ![Dashboard](./docs/screenshots/dashboard.png) | ![Dashboard](./docs/screenshots/dashboard.png) |
 
 ---
 
