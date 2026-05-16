@@ -6,8 +6,8 @@
 
 Aggregate balances and transactions across multiple banks, auto-categorise spending, set savings goals, and surface "where did my money actually go?" insights - all built on the UK Open Banking standard via TrueLayer.
 
-[![CI](https://github.com/YOUR_USERNAME/finsight/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/finsight/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/YOUR_USERNAME/finsight/actions/workflows/codeql.yml/badge.svg)](https://github.com/YOUR_USERNAME/finsight/actions/workflows/codeql.yml)
+[![CI](https://github.com/Mulualem03/finsight/actions/workflows/ci.yml/badge.svg)](https://github.com/Mulualem03/finsight/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Mulualem03/finsight/actions/workflows/codeql.yml/badge.svg)](https://github.com/Mulualem03/finsight/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 </div>
@@ -121,7 +121,7 @@ See [docs/ROADMAP.md](./docs/ROADMAP.md). Next up: ML-based categorisation, subs
 ### Run the whole stack
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/finsight.git
+git clone https://github.com/Mulualem03/finsight.git
 cd finsight
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
