@@ -1,0 +1,230 @@
+// FinSight database schema
+// Conventions:
+// - All IDs are ULIDs (sortable, URL-safe) generated app-side, not cuid/uuid
+// - All monetary amounts are stored as `BigInt` in minor units (pence) to avoid float drift
+// - Soft delete is not used; deletion is genuine, audit log captures intent
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users & auth ──────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id
+  email        String   @unique
+  passwordHash String
+  displayName  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bankConnections BankConnection[]
+  goals           Goal[]
+  categoryRules   UserCategoryRule[]
+  refreshTokens   RefreshToken[]
+  auditEvents     AuditEvent[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─── Open Banking ──────────────────────────────────────────────────────────
+
+enum BankConnectionStatus {
+  ACTIVE
+  REAUTH_REQUIRED
+  REVOKED
+  ERROR
+}
+
+model BankConnection {
+  id                  String               @id
+  userId              String
+  provider            String               // "truelayer" | "mock"
+  providerConnectionId String              // provider-side identifier
+  institutionId       String               // e.g. "ob-lloyds"
+  institutionName     String               // e.g. "Lloyds Bank"
+  // Tokens are encrypted at the application layer before being written.
+  encryptedAccessToken  String
+  encryptedRefreshToken String
+  accessTokenExpiresAt  DateTime
+  status              BankConnectionStatus @default(ACTIVE)
+  lastSyncedAt        DateTime?
+  lastSyncError       String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accounts Account[]
+
+  @@unique([userId, providerConnectionId])
+  @@index([userId])
+  @@map("bank_connections")
+}
+
+// ─── Accounts & transactions ───────────────────────────────────────────────
+
+enum AccountType {
+  CURRENT
+  SAVINGS
+  CREDIT_CARD
+  LOAN
+  OTHER
+}
+
+model Account {
+  id                String      @id
+  bankConnectionId  String
+  providerAccountId String
+  displayName       String      // e.g. "Lloyds Classic Account"
+  type              AccountType
+  currency          String      @default("GBP")
+  // BigInt to avoid float drift; pence
+  balance           BigInt
+  availableBalance  BigInt?
+  accountNumberMasked String?   // e.g. "****1234"
+  sortCode          String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  bankConnection BankConnection @relation(fields: [bankConnectionId], references: [id], onDelete: Cascade)
+  transactions   Transaction[]
+
+  @@unique([bankConnectionId, providerAccountId])
+  @@index([bankConnectionId])
+  @@map("accounts")
+}
+
+enum TransactionDirection {
+  DEBIT
+  CREDIT
+}
+
+model Category {
+  id          String   @id
+  slug        String   @unique     // "groceries", "transport", "uncategorised"
+  name        String                 // "Groceries"
+  parentSlug  String?                // "food" for "groceries"
+  icon        String?                // emoji or icon ref
+  colour      String?                // hex
+  isSystem    Boolean  @default(true)
+
+  transactions Transaction[]
+  userRules    UserCategoryRule[]
+
+  @@map("categories")
+}
+
+model Transaction {
+  id                    String               @id
+  accountId             String
+  providerTransactionId String               // stable across re-sync; used for upsert
+  bookedAt              DateTime
+  postedAt              DateTime?
+  amount                BigInt               // signed; positive = credit, negative = debit
+  direction             TransactionDirection
+  currency              String               @default("GBP")
+  description           String
+  merchantName          String?
+  mcc                   String?              // merchant category code
+  categorySlug          String               @default("uncategorised")
+  manuallyCategorised   Boolean              @default(false)
+  notes                 String?
+  rawPayload            Json?                // raw provider payload, retained in non-prod
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categorySlug], references: [slug])
+
+  @@unique([accountId, providerTransactionId])
+  @@index([accountId, bookedAt])
+  @@index([categorySlug, bookedAt])
+  @@map("transactions")
+}
+
+// Per-user override: when a transaction matches this pattern, force this category.
+model UserCategoryRule {
+  id           String   @id
+  userId       String
+  pattern      String   // regex matched against `merchant_name + " " + description`
+  categorySlug String
+  priority     Int      @default(100)
+  createdAt    DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categorySlug], references: [slug])
+
+  @@index([userId])
+  @@map("user_category_rules")
+}
+
+// ─── Goals ─────────────────────────────────────────────────────────────────
+
+model Goal {
+  id          String    @id
+  userId      String
+  name        String
+  // Target amount in minor units
+  targetAmount BigInt
+  deadline    DateTime?
+  // Free-form: which account does this savings goal accumulate in?
+  linkedAccountId String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contributions GoalContribution[]
+
+  @@index([userId])
+  @@map("goals")
+}
+
+model GoalContribution {
+  id        String   @id
+  goalId    String
+  amount    BigInt   // minor units
+  occurredAt DateTime @default(now())
+  note      String?
+
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([goalId])
+  @@map("goal_contributions")
+}
+
+// ─── Audit ─────────────────────────────────────────────────────────────────
+
+model AuditEvent {
+  id         String   @id
+  userId     String?
+  action     String   // e.g. "auth.login", "transaction.recategorise"
+  resourceId String?
+  ip         String?
+  userAgent  String?
+  metadata   Json?
+  occurredAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, occurredAt])
+  @@index([action, occurredAt])
+  @@map("audit_events")
+}

@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: finsight
+      POSTGRES_PASSWORD: finsight
+      POSTGRES_DB: finsight
+    ports: ['5432:5432']
+    volumes: ['postgres-data:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U finsight']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ['6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build: ./backend
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      NODE_ENV: development
+      PORT: '3000'
+      DATABASE_URL: postgresql://finsight:finsight@postgres:5432/finsight?schema=public
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: http://localhost:5173
+      JWT_ACCESS_SECRET: development-only-access-secret-replace-me-please-thirty-two
+      JWT_REFRESH_SECRET: development-only-refresh-secret-replace-me-please-thirty-two
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 7d
+      # Decoded length must be exactly 32 bytes. Generate per env with: openssl rand -base64 32
+      TOKEN_ENCRYPTION_KEY: YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERUY=
+      TRUELAYER_CLIENT_ID: unused-in-mock-mode
+      TRUELAYER_CLIENT_SECRET: unused-in-mock-mode
+      TRUELAYER_REDIRECT_URI: http://localhost:5173/connect/callback
+      OPEN_BANKING_PROVIDER: mock
+    ports: ['3000:3000']
+    command: sh -c "npx prisma db push --skip-generate && npm run db:seed && node dist/src/main.js"
+
+  frontend:
+    build: ./frontend
+    depends_on: [backend]
+    ports: ['5173:80']
+
+volumes:
+  postgres-data:
